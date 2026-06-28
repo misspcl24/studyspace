@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Study Log — StudySpace{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2 class="page-title">Study Log</h2>
+    <p class="page-sub">All your focus sessions, in one place.</p>
+  </div>
+  <button class="btn btn-primary" onclick="openStudySession()">+ Start Session</button>
+</div>
+
+{% if sessions %}
+<div class="study-session-list">
+  {% for s in sessions %}
+  <div class="study-session-card">
+    <div class="study-session-row">
+      <div class="study-session-left">
+        <span class="study-course-pill">{{ s.course_name }}</span>
+        <span class="study-session-name">{{ s.name or 'Untitled session' }}</span>
+        <span class="study-session-date">{{ s.date | fmt_date }}</span>
+      </div>
+      <div class="study-session-right">
+        <span class="study-session-dur">{{ s.duration | fmt_duration }}</span>
+        {% if s.break_time %}
+        <span class="study-session-date">{{ s.break_time | fmt_duration }} break</span>
+        {% endif %}
+      </div>
+    </div>
+    {% if s.notes %}
+    <p class="study-session-notes">{{ s.notes }}</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">⏱</div>
+  <p class="empty-text">No study sessions yet.</p>
+  <p class="empty-sub">Hit "Start Session" to begin logging your focus time.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const _preselect = "{{ preselect_course }}";
+  if (_preselect) openStudySession(_preselect);
+</script>
+{% endblock %}

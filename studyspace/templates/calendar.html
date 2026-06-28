@@ -1,0 +1,577 @@
+{% extends "base.html" %}
+{% block title %}Calendar — StudySpace{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h2 class="page-title">Calendar</h2>
+  <div class="cal-view-toggle">
+    <button class="btn btn-ghost btn-sm cal-toggle active" data-view="month">Month</button>
+    <button class="btn btn-ghost btn-sm cal-toggle" data-view="week">Week</button>
+  </div>
+</div>
+
+<div class="cal-layout">
+
+<div class="cal-wrap">
+  <div class="cal-nav-row">
+    <button class="cal-nav-btn" id="cal-prev">‹</button>
+    <span class="cal-nav-label" id="cal-month-label"></span>
+    <button class="cal-nav-btn" id="cal-next">›</button>
+  </div>
+  <div class="cal-header-row">
+    <div class="cal-day-name">Sun</div>
+    <div class="cal-day-name">Mon</div>
+    <div class="cal-day-name">Tue</div>
+    <div class="cal-day-name">Wed</div>
+    <div class="cal-day-name">Thu</div>
+    <div class="cal-day-name">Fri</div>
+    <div class="cal-day-name">Sat</div>
+  </div>
+  <div id="cal-grid" class="cal-grid"></div>
+</div>
+
+<div id="day-panel" class="day-panel hidden">
+  <div class="day-panel-header">
+    <h3 class="day-panel-title" id="day-panel-title"></h3>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <button class="btn btn-ghost btn-sm" id="day-add-btn">+ Add</button>
+      <button class="day-panel-close" onclick="document.getElementById('day-panel').classList.add('hidden')">✕</button>
+    </div>
+  </div>
+  <div class="day-event-list" id="day-event-list"></div>
+</div>
+
+</div><!-- end .cal-layout -->
+
+<!-- Add / Edit event modal -->
+<div id="add-event-modal" class="modal-overlay" onclick="if(event.target===this)closeAddModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="event-modal-title">Add Event</h3>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <form class="modal-form" id="add-event-form">
+
+      <label>
+        Title
+        <input type="text" id="new-event-title" placeholder="e.g. Study group" required />
+      </label>
+
+      <div>
+        <div class="modal-field-label">Color</div>
+        <div class="color-picker" id="color-picker">
+          <button type="button" class="color-swatch active" data-color="#7c3aed" style="background:#7c3aed"></button>
+          <button type="button" class="color-swatch" data-color="#3b82f6" style="background:#3b82f6"></button>
+          <button type="button" class="color-swatch" data-color="#22c55e" style="background:#22c55e"></button>
+          <button type="button" class="color-swatch" data-color="#f59e0b" style="background:#f59e0b"></button>
+          <button type="button" class="color-swatch" data-color="#ef4444" style="background:#ef4444"></button>
+          <button type="button" class="color-swatch" data-color="#06b6d4" style="background:#06b6d4"></button>
+          <button type="button" class="color-swatch" data-color="#ec4899" style="background:#ec4899"></button>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">All day</span>
+        <button type="button" class="toggle-btn" id="all-day-toggle" aria-pressed="false">
+          <span class="toggle-knob"></span>
+        </button>
+      </div>
+
+      <div class="form-row">
+        <label class="form-col">
+          Start date
+          <input type="date" id="new-event-start-date" required />
+        </label>
+        <label class="form-col">
+          End date <span class="optional">(optional)</span>
+          <input type="date" id="new-event-end-date" />
+        </label>
+      </div>
+
+      <div class="form-row" id="time-row">
+        <label class="form-col">
+          Start time
+          <input type="time" id="new-event-start-time" />
+        </label>
+        <label class="form-col">
+          End time
+          <input type="time" id="new-event-end-time" />
+        </label>
+      </div>
+
+      <label>
+        Repeats
+        <select id="new-event-repeat">
+          <option value="none">Does not repeat</option>
+          <option value="daily">Every day</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+          <option value="yearly">Every year</option>
+        </select>
+      </label>
+
+      <label>
+        Course <span class="optional">(optional)</span>
+        <select id="new-event-course">
+          <option value="">— No course —</option>
+          {% for c in user.courses %}
+          <option value="{{ c.id }}">{{ c.icon or c.name[0].upper() }}  {{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Notes <span class="optional">(optional)</span>
+        <textarea id="new-event-notes" placeholder="Any details, reminders, links…" rows="3" style="resize:vertical"></textarea>
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeAddModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="event-submit-btn">Add Event</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const EVENTS  = {{ events | tojson }};
+const PROXY   = "{{ proxy_prefix }}";
+const COURSES = {{ user.courses | tojson }};
+const COURSE_MAP = Object.fromEntries(COURSES.map(c => [c.id, c]));
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+function parseDateStr(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d, 12, 0, 0);  // noon to dodge DST
+}
+
+function toStr(y, m, d) {
+  const dt = new Date(y, m, d);
+  return dt.getFullYear() + '-' +
+    String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+    String(dt.getDate()).padStart(2, '0');
+}
+
+function todayStr() {
+  const t = new Date();
+  return toStr(t.getFullYear(), t.getMonth(), t.getDate());
+}
+
+function formatTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// ── Build date → events lookup (handles multi-day + repeats) ─────────────────
+const HORIZON = new Date();
+HORIZON.setFullYear(HORIZON.getFullYear() + 2);
+
+function buildByDate(events) {
+  const result = {};
+  events.forEach(e => {
+    if (!e.date) return;
+    const start  = parseDateStr(e.date);
+    const end    = e.end_date ? parseDateStr(e.end_date) : new Date(start);
+    const spanMs = end - start;
+
+    const starts = [new Date(start)];
+    if (e.repeat && e.repeat !== 'none') {
+      let d = new Date(start);
+      for (let i = 0; i < 1000; i++) {
+        const next = new Date(d);
+        if (e.repeat === 'daily')   next.setDate(next.getDate() + 1);
+        if (e.repeat === 'weekly')  next.setDate(next.getDate() + 7);
+        if (e.repeat === 'monthly') next.setMonth(next.getMonth() + 1);
+        if (e.repeat === 'yearly')  next.setFullYear(next.getFullYear() + 1);
+        if (next > HORIZON) break;
+        starts.push(new Date(next));
+        d = next;
+      }
+    }
+
+    starts.forEach(s => {
+      const occEnd = new Date(s.getTime() + spanMs);
+      const d = new Date(s);
+      while (d <= occEnd) {
+        const key = toStr(d.getFullYear(), d.getMonth(), d.getDate());
+        if (!result[key]) result[key] = [];
+        result[key].push(e);
+        d.setDate(d.getDate() + 1);
+      }
+    });
+  });
+  return result;
+}
+
+let byDate = buildByDate(EVENTS);
+
+// ── Calendar state ────────────────────────────────────────────────────────────
+let cur  = new Date();
+let view = 'month';
+let sel  = null;
+
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+
+function eventColor(type) {
+  const map = { assignment: '#7c3aed', test: '#f59e0b', quiz: '#22c55e', project: '#3b82f6', event: '#06b6d4' };
+  return map[type] || '#7c3aed';
+}
+
+// ── Cell builder ──────────────────────────────────────────────────────────────
+function cellIcon(e) {
+  const courseData = e.course_id ? COURSE_MAP[e.course_id] : null;
+  return e.course_icon || (courseData ? (courseData.icon || courseData.name[0].toUpperCase()) : null);
+}
+
+function makeCell(y, m, d, otherMonth) {
+  const dateStr = toStr(y, m, d);
+  const evs     = byDate[dateStr] || [];
+  const isToday = dateStr === todayStr();
+  const isWeek  = view === 'week';
+
+  const cell = document.createElement('div');
+  cell.className = 'cal-cell' +
+    (otherMonth      ? ' other-month' : '') +
+    (isToday         ? ' today'       : '') +
+    (sel === dateStr ? ' selected'    : '');
+
+  const num = document.createElement('span');
+  num.className = 'cal-day-num';
+  num.textContent = d;
+  cell.appendChild(num);
+
+  if (evs.length) {
+    if (isWeek) {
+      const pills = document.createElement('div');
+      pills.className = 'cal-event-pills';
+      evs.forEach(e => {
+        const icon  = cellIcon(e);
+        const color = e.color || eventColor(e.type);
+        let timeStr = '';
+        if (e.start_time)             timeStr = formatTime(e.start_time);
+        else if (e.all_day)           timeStr = 'all day';
+        else if (e.source === 'assignment') timeStr = 'due';
+        const pill = document.createElement('div');
+        pill.className = 'cal-event-pill';
+        pill.style.borderLeftColor = color;
+        pill.style.background = color + '18';
+        pill.innerHTML = `
+          ${icon ? `<span class="pill-icon">${icon}</span>` : `<span class="pill-dot" style="background:${color}"></span>`}
+          <span class="pill-title">${e.title}</span>
+          ${timeStr ? `<span class="pill-time">${timeStr}</span>` : ''}
+        `;
+        pills.appendChild(pill);
+      });
+      cell.appendChild(pills);
+    } else {
+      const chips = document.createElement('div');
+      chips.className = 'cal-icons';
+      evs.slice(0, 6).forEach(e => {
+        const icon  = cellIcon(e);
+        const color = e.color || eventColor(e.type);
+        if (icon) {
+          const chip = document.createElement('span');
+          chip.className = 'cal-icon-chip';
+          chip.textContent = icon;
+          chip.title = e.title;
+          chips.appendChild(chip);
+        } else {
+          const dot = document.createElement('span');
+          dot.className = 'cal-dot';
+          dot.style.background = color;
+          dot.title = e.title;
+          chips.appendChild(dot);
+        }
+      });
+      cell.appendChild(chips);
+    }
+  }
+
+  cell.addEventListener('click', () => {
+    document.querySelectorAll('.cal-cell.selected').forEach(c => c.classList.remove('selected'));
+    cell.classList.add('selected');
+    sel = dateStr;
+    showPanel(dateStr, byDate[dateStr] || []);
+  });
+
+  return cell;
+}
+
+// ── Grid renderers ────────────────────────────────────────────────────────────
+function renderMonth(grid) {
+  const y = cur.getFullYear(), m = cur.getMonth();
+  const firstDay    = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const prevLast    = new Date(y, m, 0).getDate();
+
+  for (let i = firstDay - 1; i >= 0; i--)
+    grid.appendChild(makeCell(y, m - 1, prevLast - i, true));
+  for (let d = 1; d <= daysInMonth; d++)
+    grid.appendChild(makeCell(y, m, d, false));
+  const trail = (firstDay + daysInMonth) % 7;
+  if (trail) for (let d = 1; d <= 7 - trail; d++)
+    grid.appendChild(makeCell(y, m + 1, d, true));
+}
+
+function renderWeek(grid) {
+  const sun = new Date(cur);
+  sun.setDate(cur.getDate() - cur.getDay());
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(sun);
+    d.setDate(sun.getDate() + i);
+    grid.appendChild(makeCell(d.getFullYear(), d.getMonth(), d.getDate(), false));
+  }
+}
+
+function updateLabel() {
+  let label;
+  if (view === 'week') {
+    const sun = new Date(cur);
+    sun.setDate(cur.getDate() - cur.getDay());
+    label = 'Week of ' + MONTHS[sun.getMonth()] + ' ' + sun.getDate() + ', ' + sun.getFullYear();
+  } else {
+    label = MONTHS[cur.getMonth()] + ' ' + cur.getFullYear();
+  }
+  document.getElementById('cal-month-label').textContent = label;
+}
+
+function render() {
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  grid.className = 'cal-grid' + (view === 'week' ? ' week-view' : '');
+  if (view === 'month') renderMonth(grid);
+  else renderWeek(grid);
+  updateLabel();
+}
+
+// ── Day panel ─────────────────────────────────────────────────────────────────
+const REPEAT_LABELS = {
+  daily: 'Repeats daily', weekly: 'Repeats weekly',
+  monthly: 'Repeats monthly', yearly: 'Repeats yearly'
+};
+
+function showPanel(dateStr, evs) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  document.getElementById('day-panel-title').textContent =
+    dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  document.getElementById('new-event-start-date').value = dateStr;
+
+  const list = document.getElementById('day-event-list');
+  list.innerHTML = '';
+
+  if (!evs.length) {
+    list.innerHTML = `<p class="day-panel-empty">Nothing here yet. <button class="add-event-inline" onclick="openModal('add-event-modal')">Add an event</button></p>`;
+    document.getElementById('day-panel').classList.remove('hidden');
+    return;
+  }
+
+  evs.forEach(e => {
+    const isManual = e.source !== 'assignment';
+    const color    = e.color || eventColor(e.type);
+
+    let meta = '';
+    if (e.all_day) {
+      meta = e.end_date && e.end_date !== e.date ? 'All day · multi-day' : 'All day';
+    } else if (e.start_time) {
+      meta = formatTime(e.start_time) + (e.end_time ? ' – ' + formatTime(e.end_time) : '');
+    }
+    if (e.repeat && e.repeat !== 'none') meta = (meta ? meta + ' · ' : '') + REPEAT_LABELS[e.repeat];
+
+    const item = document.createElement('div');
+    item.className = 'day-event-item' + (isManual ? ' clickable' : '');
+    const courseIcon = e.course_icon || (e.course_id && COURSE_MAP[e.course_id] ? (COURSE_MAP[e.course_id].icon || COURSE_MAP[e.course_id].name[0].toUpperCase()) : '');
+    const courseLabel = e.course || (e.course_id && COURSE_MAP[e.course_id] ? COURSE_MAP[e.course_id].name : '');
+    item.innerHTML = `
+      <span class="day-event-stripe" style="background:${color}"></span>
+      <div class="day-event-body">
+        <div class="day-event-title">${e.title}</div>
+        ${courseLabel ? `<div class="day-event-course">${courseIcon ? `<span class="event-course-icon">${courseIcon}</span>` : ''}${courseLabel}</div>` : ''}
+        ${meta        ? `<div class="day-event-meta">${meta}</div>` : ''}
+        ${e.notes     ? `<div class="day-event-notes">${e.notes}</div>` : ''}
+      </div>
+      <div class="day-event-right">
+        <span class="day-event-badge" style="background:${color}20;color:${color}">${e.type || 'event'}</span>
+        ${isManual ? `<button class="day-action-btn delete-btn" title="Delete">✕</button>` : ''}
+      </div>
+    `;
+
+    if (isManual) {
+      item.addEventListener('click', (ev) => {
+        if (ev.target.closest('.delete-btn')) return;
+        openEditModal(e, dateStr);
+      });
+      item.querySelector('.delete-btn').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteEvent(e.id, dateStr);
+      });
+    }
+    list.appendChild(item);
+  });
+
+  document.getElementById('day-panel').classList.remove('hidden');
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+document.getElementById('cal-prev').addEventListener('click', () => {
+  cur = view === 'month'
+    ? new Date(cur.getFullYear(), cur.getMonth() - 1, 1)
+    : new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() - 7);
+  render();
+});
+document.getElementById('cal-next').addEventListener('click', () => {
+  cur = view === 'month'
+    ? new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+    : new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 7);
+  render();
+});
+
+document.querySelectorAll('.cal-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cal-toggle').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    view = btn.dataset.view;
+    render();
+  });
+});
+
+// ── All-day toggle ────────────────────────────────────────────────────────────
+const allDayBtn = document.getElementById('all-day-toggle');
+const timeRow   = document.getElementById('time-row');
+
+allDayBtn.addEventListener('click', () => {
+  const on = allDayBtn.classList.toggle('active');
+  allDayBtn.setAttribute('aria-pressed', on);
+  timeRow.classList.toggle('hidden', on);
+});
+
+// ── Color picker ──────────────────────────────────────────────────────────────
+let selectedColor = '#7c3aed';
+
+document.getElementById('color-picker').addEventListener('click', ev => {
+  const swatch = ev.target.closest('.color-swatch');
+  if (!swatch) return;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+  swatch.classList.add('active');
+  selectedColor = swatch.dataset.color;
+});
+
+// ── Day panel "Add" button ────────────────────────────────────────────────────
+document.getElementById('day-add-btn').addEventListener('click', () => openModal('add-event-modal'));
+
+// ── Edit / Delete ─────────────────────────────────────────────────────────────
+let editingId = null;
+
+function openEditModal(e, dateStr) {
+  editingId = e.id;
+  document.getElementById('event-modal-title').textContent = 'Edit Event';
+  document.getElementById('event-submit-btn').textContent  = 'Save Changes';
+
+  document.getElementById('new-event-title').value      = e.title || '';
+  document.getElementById('new-event-start-date').value = e.date  || dateStr;
+  document.getElementById('new-event-end-date').value   = e.end_date   || '';
+  document.getElementById('new-event-start-time').value = e.start_time || '';
+  document.getElementById('new-event-end-time').value   = e.end_time   || '';
+  document.getElementById('new-event-repeat').value     = e.repeat || 'none';
+  document.getElementById('new-event-course').value     = e.course_id  || '';
+  document.getElementById('new-event-notes').value      = e.notes || '';
+
+  const color = e.color || '#7c3aed';
+  selectedColor = color;
+  document.querySelectorAll('.color-swatch').forEach(s =>
+    s.classList.toggle('active', s.dataset.color === color)
+  );
+
+  const allDay = !!e.all_day;
+  allDayBtn.classList.toggle('active', allDay);
+  allDayBtn.setAttribute('aria-pressed', allDay);
+  timeRow.classList.toggle('hidden', allDay);
+
+  openModal('add-event-modal');
+}
+
+async function deleteEvent(id, dateStr) {
+  if (!confirm('Delete this event?')) return;
+  const res  = await fetch(PROXY + '/calendar/event/' + id, { method: 'DELETE' });
+  const json = await res.json();
+  if (json.ok) {
+    const idx = EVENTS.findIndex(ev => ev.id === id);
+    if (idx !== -1) EVENTS.splice(idx, 1);
+    byDate = buildByDate(EVENTS);
+    render();
+    showPanel(dateStr, byDate[dateStr] || []);
+  }
+}
+
+// ── Form submit (create OR update) ───────────────────────────────────────────
+document.getElementById('add-event-form').addEventListener('submit', async function(ev) {
+  ev.preventDefault();
+  const allDay = allDayBtn.classList.contains('active');
+  const data = {
+    title:      document.getElementById('new-event-title').value.trim(),
+    date:       document.getElementById('new-event-start-date').value,
+    end_date:   document.getElementById('new-event-end-date').value   || null,
+    start_time: allDay ? null : (document.getElementById('new-event-start-time').value || null),
+    end_time:   allDay ? null : (document.getElementById('new-event-end-time').value   || null),
+    all_day:    allDay,
+    repeat:     document.getElementById('new-event-repeat').value,
+    color:      selectedColor,
+    course_id:  document.getElementById('new-event-course').value || null,
+    notes:      document.getElementById('new-event-notes').value.trim() || null,
+    type:       'event'
+  };
+  if (!data.title || !data.date) return;
+
+  const url    = editingId ? PROXY + '/calendar/event/' + editingId : PROXY + '/calendar/event/add';
+  const method = editingId ? 'PUT' : 'POST';
+  const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  const json   = await res.json();
+
+  if (json.ok) {
+    if (editingId) {
+      const idx = EVENTS.findIndex(e => e.id === editingId);
+      if (idx !== -1) Object.assign(EVENTS[idx], data);
+    } else {
+      EVENTS.push(data);
+    }
+    byDate = buildByDate(EVENTS);
+    closeAddModal();
+    render();
+    if (sel) showPanel(sel, byDate[sel] || []);
+  }
+});
+
+// ── Modal helpers ─────────────────────────────────────────────────────────────
+function closeAddModal() {
+  closeModal('add-event-modal');
+  editingId = null;
+  document.getElementById('event-modal-title').textContent = 'Add Event';
+  document.getElementById('event-submit-btn').textContent  = 'Add Event';
+  document.getElementById('add-event-form').reset();
+  allDayBtn.classList.remove('active');
+  allDayBtn.setAttribute('aria-pressed', 'false');
+  timeRow.classList.remove('hidden');
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+  document.querySelector('.color-swatch[data-color="#7c3aed"]').classList.add('active');
+  selectedColor = '#7c3aed';
+  document.getElementById('new-event-course').value = '';
+  document.getElementById('new-event-notes').value  = '';
+}
+
+render();
+
+const jumpDate = new URLSearchParams(window.location.search).get('date');
+if (jumpDate) {
+  const [jy, jm, jd] = jumpDate.split('-').map(Number);
+  cur = new Date(jy, jm - 1, jd);
+  sel = jumpDate;
+  render();
+  showPanel(jumpDate, byDate[jumpDate] || []);
+}
+</script>
+{% endblock %}

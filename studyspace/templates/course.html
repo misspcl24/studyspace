@@ -1,0 +1,726 @@
+{% extends "base.html" %}
+{% block title %}{{ course.name }} — StudySpace{% endblock %}
+
+{% block content %}
+<div class="course-header">
+  <div class="course-header-top">
+    <a href="{{ purl('dashboard') }}" class="back-link">← My Courses</a>
+    <button class="btn btn-ghost btn-sm btn-danger-ghost" onclick="openModal('delete-course-modal')">Delete course</button>
+  </div>
+  <div class="course-header-row">
+    <div class="course-icon course-icon-lg course-icon-editable" onclick="openModal('icon-picker-modal')" title="Change icon" id="course-icon-display">{{ course.icon or course.name[0].upper() }}</div>
+    <div>
+      <h2 class="course-title">{{ course.name }}</h2>
+      {% if course.description %}<p class="course-title-sub">{{ course.description }}</p>{% endif %}
+    </div>
+    <div class="grade-input-wrap">
+      <label class="grade-label">Grade</label>
+      <input
+        id="grade-input"
+        type="text"
+        class="grade-input"
+        value="{{ course.grade }}"
+        placeholder="—"
+        data-course-id="{{ course.id }}"
+      />
+    </div>
+  </div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="study">Study</button>
+  <button class="tab-btn" data-tab="notes">Notes</button>
+</div>
+
+<!-- ── OVERVIEW TAB ──────────────────────────────────────────────────────── -->
+<div id="tab-overview" class="tab-panel active">
+
+  <div class="section-header">
+    <h3 class="section-title">Assignments & Tests</h3>
+    <button class="btn btn-primary btn-sm" onclick="openModal('add-assignment-modal')">+ Add</button>
+  </div>
+
+  {% if course.assignments %}
+  <div class="assignment-list">
+    {% for a in course.assignments %}
+    <div class="assignment-card" onclick="openAssignmentDetail('{{ a.id }}')">
+      <div class="assignment-top">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:.4rem">
+          <span class="assignment-type {{ a.type }}">{{ a.type | capitalize }}</span>
+          <span class="assignment-title {% if a.progress == 100 %}strikethrough{% endif %}">{{ a.title }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+          {% if a.progress == 100 %}
+          <span class="assignment-done-badge">✓ Done</span>
+          {% endif %}
+          {% if a.due %}
+          <span class="assignment-due">Due {{ a.due }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if a.description %}
+      <p class="assignment-notes-preview">{{ a.description[:100] }}{% if a.description|length > 100 %}…{% endif %}</p>
+      {% endif %}
+      {% if a.type in ['assignment', 'project'] and a.progress < 100 %}
+      <div class="progress-row" onclick="event.stopPropagation()">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" style="width: {{ a.progress }}%"></div>
+        </div>
+        <input
+          type="range" min="0" max="100" value="{{ a.progress }}"
+          class="progress-slider"
+          data-course-id="{{ course.id }}"
+          data-assignment-id="{{ a.id }}"
+        />
+        <span class="progress-label">{{ a.progress }}%</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state small">
+    <p class="empty-text">No assignments yet — add one above.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- ── STUDY TAB ─────────────────────────────────────────────────────────── -->
+<div id="tab-study" class="tab-panel">
+
+  <!-- Study Log -->
+  <div class="section-header">
+    <h3 class="section-title">Study Log</h3>
+    <button class="btn btn-primary btn-sm" onclick="openStudySession('{{ course.id }}')">+ Start Session</button>
+  </div>
+
+  {% set study_sessions = course.study_sessions | default([]) %}
+  {% if study_sessions %}
+  <div class="study-session-list">
+    {% for s in study_sessions | reverse %}
+    <div class="study-session-card">
+      <div class="study-session-row">
+        <div class="study-session-left">
+          <span class="study-session-name">{{ s.name or 'Untitled session' }}</span>
+          <span class="study-session-date">{{ s.date | fmt_date }}</span>
+        </div>
+        <div class="study-session-right">
+          <span class="study-session-dur">{{ s.duration | fmt_duration }}</span>
+          {% if s.break_time %}
+          <span class="study-session-date">{{ s.break_time | fmt_duration }} break</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if s.notes %}
+      <p class="study-session-notes">{{ s.notes }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state small">
+    <p class="empty-text">No sessions yet — start one above to begin logging your study time.</p>
+  </div>
+  {% endif %}
+
+  <hr class="study-section-divider">
+
+  <!-- Flashcards -->
+  <div class="section-header">
+    <h3 class="section-title">Flashcards</h3>
+    <button class="btn btn-primary btn-sm" onclick="openModal('add-flashcard-modal')">+ Add</button>
+  </div>
+
+  {% set flashcards = course.flashcards | default([]) %}
+  {% if flashcards %}
+  <div class="card-grid">
+    {% for fc in flashcards %}
+    <div class="tool-card flashcard-card">
+      <p class="flashcard-front">{{ fc.front }}</p>
+      <hr class="flashcard-inner-divider">
+      <p class="flashcard-back">{{ fc.back }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state small">
+    <p class="empty-text">No flashcards yet — add one above.</p>
+  </div>
+  {% endif %}
+
+  <hr class="study-section-divider">
+
+  <!-- Quizzes -->
+  <div class="section-header">
+    <h3 class="section-title">Quizzes</h3>
+    <button class="btn btn-primary btn-sm" onclick="openModal('add-quiz-modal')">+ Add</button>
+  </div>
+
+  {% set quizzes = course.quizzes | default([]) %}
+  {% if quizzes %}
+  <div class="card-grid">
+    {% for q in quizzes %}
+    <div class="tool-card">
+      <div class="tool-icon">📝</div>
+      {% if q.url %}
+      <a href="{{ q.url }}" target="_blank" class="tool-name study-link">{{ q.title }}</a>
+      {% else %}
+      <span class="tool-name">{{ q.title }}</span>
+      {% endif %}
+      <span class="tool-desc">Quiz</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state small">
+    <p class="empty-text">No quizzes yet — add one above.</p>
+  </div>
+  {% endif %}
+
+  <hr class="study-section-divider">
+
+  <!-- Study Track / Notes -->
+  <div class="section-header">
+    <h3 class="section-title">Study Notes</h3>
+    <button class="btn btn-primary btn-sm" onclick="openModal('add-study-note-modal')">+ New Session</button>
+  </div>
+
+  {% set study_notes = course.study_notes | default([]) %}
+  {% if study_notes %}
+  <div class="card-grid">
+    {% for note in study_notes %}
+    <div class="tool-card note-session-card">
+      <div class="tool-icon">{% if note.type == 'math' %}📐{% else %}📝{% endif %}</div>
+      <h4 class="tool-name">{{ note.title }}</h4>
+      <p class="tool-desc">{{ note.type | capitalize }} notes</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state small">
+    <p class="empty-text">No study notes yet — add a session above.</p>
+  </div>
+  {% endif %}
+
+  <hr class="study-section-divider">
+
+  <!-- Resources -->
+  <div class="section-header">
+    <h3 class="section-title">Resources</h3>
+    <button class="btn btn-primary btn-sm" onclick="openModal('add-resource-modal')">+ Add</button>
+  </div>
+
+  {% set resources = course.resources | default([]) %}
+  {% if resources %}
+  <div class="card-grid">
+    {% for r in resources %}
+    <div class="tool-card">
+      <div class="tool-icon">{% if r.type == 'quizlet' %}🃏{% elif r.type == 'youtube' %}▶️{% elif r.type == 'document' %}📄{% else %}🔗{% endif %}</div>
+      <a href="{{ r.url }}" target="_blank" class="tool-name study-link">{{ r.title }}</a>
+      <span class="tool-desc resource-type-badge resource-{{ r.type }}">{{ r.type | capitalize }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state small">
+    <p class="empty-text">No resources yet — add links to Quizlet, YouTube, or anything helpful.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- ── NOTES TAB ─────────────────────────────────────────────────────────── -->
+<div id="tab-notes" class="tab-panel">
+
+  <div class="section-header">
+    <h3 class="section-title">Note Sessions</h3>
+    <button class="btn btn-primary btn-sm" onclick="openModal('add-note-modal')">+ New Session</button>
+  </div>
+
+  <div class="card-grid">
+    {% for note in course.notes %}
+    <div class="tool-card note-session-card">
+      <div class="tool-icon">{% if note.type == 'math' %}📐{% else %}📝{% endif %}</div>
+      <h4 class="tool-name">{{ note.title }}</h4>
+      <p class="tool-desc">{{ note.type | capitalize }} notes</p>
+    </div>
+    {% endfor %}
+
+    {% if not course.notes %}
+    <div class="empty-state small full-width">
+      <p class="empty-text">No note sessions yet. Each session is a separate topic so things stay organized.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<aside id="course-week-float" class="this-week-float" style="display:none">
+  <div class="this-week-header">
+    <span class="this-week-title">This week</span>
+    <a href="{{ purl('calendar') }}" class="this-week-link">View all →</a>
+  </div>
+  <div class="this-week-list" id="course-week-list"></div>
+</aside>
+
+<!-- ── MODALS ─────────────────────────────────────────────────────────────── -->
+
+<!-- Assignment Detail Modal -->
+<div id="assignment-detail-modal" class="modal-overlay" onclick="closeModal('assignment-detail-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <span id="detail-type-badge" class="assignment-type"></span>
+        <h3 id="detail-title" style="margin:0;font-size:1.05rem"></h3>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <button class="btn btn-primary btn-sm" onclick="saveAssignmentNotes()">Save Notes</button>
+        <button class="modal-close" onclick="closeModal('assignment-detail-modal')">✕</button>
+      </div>
+    </div>
+    <div class="modal-form">
+      <p id="detail-due" class="detail-due" style="display:none"></p>
+
+      <label>Notes
+        <textarea id="detail-description" rows="4" placeholder="Add your own notes about this assignment..."></textarea>
+      </label>
+
+      <div class="modal-actions" style="margin-top:1.25rem;justify-content:space-between;align-items:center">
+        <button class="btn btn-danger btn-sm" onclick="deleteAssignment()">Delete</button>
+        <button id="detail-done-btn" class="btn btn-success" onclick="toggleAssignmentDone()">✓ Mark Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="add-assignment-modal" class="modal-overlay" onclick="closeModal('add-assignment-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Add Assignment or Test</h3>
+      <button class="modal-close" onclick="closeModal('add-assignment-modal')">✕</button>
+    </div>
+    <form method="POST" action="{{ purl('add_assignment', course_id=course.id) }}" class="modal-form">
+      <label>Title
+        <input type="text" name="title" placeholder="e.g. Chapter 5 Essay" required autofocus />
+      </label>
+      <label>Type
+        <select name="type">
+          <option value="assignment">Assignment</option>
+          <option value="test">Test</option>
+          <option value="quiz">Quiz</option>
+          <option value="project">Project</option>
+        </select>
+      </label>
+      <label>Due date <span class="optional">(optional)</span>
+        <input type="date" name="due" />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('add-assignment-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="add-note-modal" class="modal-overlay" onclick="closeModal('add-note-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>New Note Session</h3>
+      <button class="modal-close" onclick="closeModal('add-note-modal')">✕</button>
+    </div>
+    <div class="modal-form">
+      <label>Topic / title
+        <input type="text" id="note-title-input" placeholder="e.g. Chapter 3 — Forces" />
+      </label>
+      <label>Note type</label>
+      <div class="note-type-picker">
+        <button class="note-type-btn active" data-type="regular">📝 Regular notes</button>
+        <button class="note-type-btn" data-type="math">📐 Math whiteboard</button>
+      </div>
+      <div class="modal-actions" style="margin-top:1.5rem;">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('add-note-modal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createNote('{{ course.id }}')">Create session</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Add Flashcard Modal -->
+<div id="add-flashcard-modal" class="modal-overlay" onclick="closeModal('add-flashcard-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Add Flashcard</h3>
+      <button class="modal-close" onclick="closeModal('add-flashcard-modal')">✕</button>
+    </div>
+    <div class="modal-form">
+      <label>Front (term / question)
+        <input type="text" id="fc-front" placeholder="e.g. Mitosis" autofocus />
+      </label>
+      <label>Back (definition / answer)
+        <textarea id="fc-back" rows="3" placeholder="e.g. Cell division that produces two identical daughter cells"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('add-flashcard-modal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="addFlashcard('{{ course.id }}')">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Quiz Modal -->
+<div id="add-quiz-modal" class="modal-overlay" onclick="closeModal('add-quiz-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Add Quiz</h3>
+      <button class="modal-close" onclick="closeModal('add-quiz-modal')">✕</button>
+    </div>
+    <div class="modal-form">
+      <label>Title
+        <input type="text" id="quiz-title" placeholder="e.g. Chapter 3 Quiz" />
+      </label>
+      <label>Link <span class="optional">(optional — Quizlet, Google Form, etc.)</span>
+        <input type="url" id="quiz-url" placeholder="https://..." />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('add-quiz-modal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="addQuiz('{{ course.id }}')">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Study Note Modal -->
+<div id="add-study-note-modal" class="modal-overlay" onclick="closeModal('add-study-note-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>New Study Note Session</h3>
+      <button class="modal-close" onclick="closeModal('add-study-note-modal')">✕</button>
+    </div>
+    <div class="modal-form">
+      <label>Topic / title
+        <input type="text" id="study-note-title" placeholder="e.g. Chapter 3 — Forces" />
+      </label>
+      <label>Note type</label>
+      <div class="note-type-picker" id="study-note-type-picker">
+        <button class="note-type-btn active" data-type="regular">📝 Regular notes</button>
+        <button class="note-type-btn" data-type="math">📐 Math whiteboard</button>
+      </div>
+      <div class="modal-actions" style="margin-top:1.5rem;">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('add-study-note-modal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="addStudyNote('{{ course.id }}')">Create session</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Resource Modal -->
+<div id="add-resource-modal" class="modal-overlay" onclick="closeModal('add-resource-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Add Resource</h3>
+      <button class="modal-close" onclick="closeModal('add-resource-modal')">✕</button>
+    </div>
+    <div class="modal-form">
+      <label>Title
+        <input type="text" id="res-title" placeholder="e.g. Chapter 5 Quizlet" />
+      </label>
+      <label>URL
+        <input type="url" id="res-url" placeholder="https://..." />
+      </label>
+      <label>Type
+        <select id="res-type">
+          <option value="quizlet">Quizlet</option>
+          <option value="youtube">YouTube</option>
+          <option value="document">Document</option>
+          <option value="website">Website</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('add-resource-modal')">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="addResource('{{ course.id }}')">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Icon Picker Modal -->
+<div id="icon-picker-modal" class="modal-overlay" onclick="closeModal('icon-picker-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Pick an icon</h3>
+      <button class="modal-close" onclick="closeModal('icon-picker-modal')">✕</button>
+    </div>
+    <div class="emoji-grid">
+      {% for emoji in ['📚','📖','✏️','📝','📐','📏','🔬','🔭','🧪','🧬','💻','🖥️','📊','📈','🎨','🎭','🎵','🎸','🌍','🧮','⚗️','🔢','💡','🎯','🏆','🌱','🧠','📡','🔑','⭐','🚀','🦁','🐬','🌺','☀️','❄️','🌙','🌈','✨','🎃'] %}
+      <button class="emoji-btn" onclick="saveIcon('{{ emoji }}')">{{ emoji }}</button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div id="delete-course-modal" class="modal-overlay" onclick="closeModal('delete-course-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Delete course?</h3>
+      <button class="modal-close" onclick="closeModal('delete-course-modal')">✕</button>
+    </div>
+    <div class="modal-form">
+      <p class="delete-warning">This will permanently delete <strong>{{ course.name }}</strong> and all its assignments and data. This can't be undone.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('delete-course-modal')">Cancel</button>
+        <form method="POST" action="{{ purl('delete_course', course_id=course.id) }}" style="margin:0">
+          <button type="submit" class="btn btn-danger">Delete course</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const COURSE_ID = "{{ course.id }}";
+  const ASSIGNMENTS = {{ course.assignments | tojson }};
+  let currentAssignmentId = null;
+
+  function openAssignmentDetail(id) {
+    const a = ASSIGNMENTS.find(x => x.id === id);
+    if (!a) return;
+    currentAssignmentId = id;
+
+    document.getElementById('detail-title').textContent = a.title;
+    const badge = document.getElementById('detail-type-badge');
+    badge.textContent = a.type.charAt(0).toUpperCase() + a.type.slice(1);
+    badge.className = 'assignment-type ' + a.type;
+
+    const dueEl = document.getElementById('detail-due');
+    if (a.due) { dueEl.textContent = 'Due ' + a.due; dueEl.style.display = ''; }
+    else { dueEl.style.display = 'none'; }
+
+    document.getElementById('detail-description').value = a.description || '';
+
+    const doneBtn = document.getElementById('detail-done-btn');
+    if (a.progress === 100) {
+      doneBtn.textContent = '↩ Mark Unfinished';
+      doneBtn.className = 'btn btn-ghost';
+    } else {
+      doneBtn.textContent = '✓ Mark Done';
+      doneBtn.className = 'btn btn-success';
+    }
+
+    openModal('assignment-detail-modal');
+  }
+
+  async function saveAssignmentNotes() {
+    const desc = document.getElementById('detail-description').value;
+    await fetch(`{{ proxy_prefix }}/course/${COURSE_ID}/assignment/${currentAssignmentId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: desc })
+    });
+    closeModal('assignment-detail-modal');
+    location.reload();
+  }
+
+  async function toggleAssignmentDone() {
+    const a = ASSIGNMENTS.find(x => x.id === currentAssignmentId);
+    const newProgress = (a && a.progress === 100) ? 0 : 100;
+    await fetch(`{{ proxy_prefix }}/course/${COURSE_ID}/assignment/${currentAssignmentId}/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ progress: newProgress })
+    });
+    closeModal('assignment-detail-modal');
+    location.reload();
+  }
+
+  async function deleteAssignment() {
+    if (!confirm('Delete this assignment? This can\'t be undone.')) return;
+    await fetch(`{{ proxy_prefix }}/course/${COURSE_ID}/assignment/${currentAssignmentId}/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    closeModal('assignment-detail-modal');
+    location.reload();
+  }
+
+  async function saveIcon(emoji) {
+    await fetch(`{{ proxy_prefix }}/course/${COURSE_ID}/icon`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icon: emoji })
+    });
+    document.getElementById('course-icon-display').textContent = emoji;
+    closeModal('icon-picker-modal');
+  }
+
+  // Tab switching
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+      const float = document.getElementById('course-week-float');
+      if (float) float.style.display = btn.dataset.tab === 'overview' ? '' : 'none';
+    });
+  });
+
+  // Grade auto-save
+  const gradeInput = document.getElementById("grade-input");
+  let gradeTimer;
+  gradeInput.addEventListener("input", () => {
+    clearTimeout(gradeTimer);
+    gradeTimer = setTimeout(() => {
+      fetch(`{{ proxy_prefix }}/course/${gradeInput.dataset.courseId}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade: gradeInput.value })
+      });
+    }, 800);
+  });
+
+  // Progress sliders
+  document.querySelectorAll(".progress-slider").forEach(slider => {
+    const label = slider.nextElementSibling;
+    const bar = slider.parentElement.previousElementSibling?.querySelector(".progress-bar-fill") ||
+                slider.closest(".progress-row").querySelector(".progress-bar-fill");
+
+    slider.addEventListener("input", () => {
+      label.textContent = slider.value + "%";
+      bar.style.width = slider.value + "%";
+    });
+
+    slider.addEventListener("change", () => {
+      const val = parseInt(slider.value);
+      fetch(`{{ proxy_prefix }}/course/${slider.dataset.courseId}/assignment/${slider.dataset.assignmentId}/progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ progress: val })
+      }).then(() => { if (val === 100) location.reload(); });
+    });
+  });
+
+  function createNote(courseId) {
+    alert("Note editor coming in the next session!");
+    closeModal("add-note-modal");
+  }
+
+  // Note type pickers (handles both Notes tab and Study tab pickers)
+  document.querySelectorAll(".note-type-picker").forEach(picker => {
+    picker.querySelectorAll(".note-type-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        picker.querySelectorAll(".note-type-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+  });
+
+  async function addFlashcard(courseId) {
+    const front = document.getElementById("fc-front").value.trim();
+    const back  = document.getElementById("fc-back").value.trim();
+    if (!front || !back) return;
+    await fetch(`{{ proxy_prefix }}/course/${courseId}/flashcard/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ front, back })
+    });
+    location.reload();
+  }
+
+  async function addQuiz(courseId) {
+    const title = document.getElementById("quiz-title").value.trim();
+    const url   = document.getElementById("quiz-url").value.trim();
+    if (!title) return;
+    await fetch(`{{ proxy_prefix }}/course/${courseId}/quiz/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, url })
+    });
+    location.reload();
+  }
+
+  async function addStudyNote(courseId) {
+    const title = document.getElementById("study-note-title").value.trim();
+    const picker = document.getElementById("study-note-type-picker");
+    const type  = picker.querySelector(".note-type-btn.active")?.dataset.type || "regular";
+    if (!title) return;
+    await fetch(`{{ proxy_prefix }}/course/${courseId}/study-note/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, type })
+    });
+    location.reload();
+  }
+
+  async function addResource(courseId) {
+    const title = document.getElementById("res-title").value.trim();
+    const url   = document.getElementById("res-url").value.trim();
+    const type  = document.getElementById("res-type").value;
+    if (!title || !url) return;
+    await fetch(`{{ proxy_prefix }}/course/${courseId}/resource/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, url, type })
+    });
+    location.reload();
+  }
+
+  // Course week sidebar
+  const PROXY = "{{ proxy_prefix }}";
+  const COURSE_SIDEBAR_ITEMS = {{ course_sidebar_items | tojson }};
+
+  (function buildCourseSidebar() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const todayStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+    const weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 6);
+    const weekEndStr = weekEnd.getFullYear() + '-' + pad(weekEnd.getMonth()+1) + '-' + pad(weekEnd.getDate());
+
+    const items = COURSE_SIDEBAR_ITEMS
+      .filter(item => item.date >= todayStr && item.date <= weekEndStr)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (!items.length) return;
+
+    function dayLabel(dateStr) {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const diff = Math.round((new Date(y, m-1, d) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+      if (diff === 0) return 'Today';
+      if (diff === 1) return 'Tomorrow';
+      return new Date(y, m-1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    const list = document.getElementById('course-week-list');
+    let lastLabel = null;
+    items.forEach(item => {
+      const label = dayLabel(item.date);
+      if (label !== lastLabel) {
+        const d = document.createElement('div');
+        d.className = 'this-week-day';
+        d.textContent = label;
+        list.appendChild(d);
+        lastLabel = label;
+      }
+      const el = document.createElement('div');
+      el.className = 'this-week-item';
+      el.innerHTML =
+        `<span class="this-week-dot" style="background:${item.color}"></span>` +
+        `<div><span class="this-week-item-title">${item.title}</span>` +
+        (item.sublabel ? `<span class="this-week-item-sub">${item.sublabel}</span>` : '') +
+        `</div>`;
+      el.addEventListener('click', () => {
+        window.location.href = PROXY + '/calendar?date=' + item.date;
+      });
+      list.appendChild(el);
+    });
+
+    document.getElementById('course-week-float').style.display = '';
+  })();
+</script>
+{% endblock %}

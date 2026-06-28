@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sign In — StudySpace{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+  <h1 class="auth-logo">StudySpace</h1>
+  <p class="auth-sub">Your courses. Your progress.</p>
+
+  {% if error %}
+  <div class="alert">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" class="auth-form">
+    <label>Username
+      <input type="text" name="username" autocomplete="username" required autofocus />
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required />
+    </label>
+    <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+  </form>
+
+  <p class="auth-switch">Don't have an account? <a href="{{ purl('signup') }}">Create one</a></p>
+</div>
+{% endblock %}

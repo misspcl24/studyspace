@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}StudySpace{% endblock %}</title>
+  <link rel="stylesheet" href="{{ proxy_prefix }}/static/css/style.css" />
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+  {% if session.username %}
+  <nav class="nav">
+    <a href="{{ purl('dashboard') }}" class="nav-logo">StudySpace</a>
+    <div class="nav-right">
+      <button class="nav-menu-btn" onclick="toggleNavMenu()">
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+        <span class="hamburger-bar"></span>
+      </button>
+      <div id="nav-dropdown" class="nav-dropdown">
+        <a href="{{ purl('profile') }}" class="nav-dropdown-user">{{ session.username }}</a>
+        <div class="nav-dropdown-divider"></div>
+        <div class="nav-group">
+          <a href="{{ purl('dashboard') }}" class="nav-dropdown-link {% if request.endpoint == 'dashboard' %}active{% endif %}">📚 Dashboard</a>
+          {% if nav_courses %}
+          <button class="nav-group-toggle {% if request.endpoint == 'course' %}open{% endif %}" id="nav-courses-toggle" onclick="toggleNavCourses(event)">
+            <span class="nav-group-arrow"></span>
+          </button>
+          {% endif %}
+        </div>
+        {% if nav_courses %}
+        <div id="nav-courses-list" class="nav-courses-list {% if request.endpoint == 'course' %}open{% endif %}">
+          {% for c in nav_courses %}
+          <a href="{{ purl('course', course_id=c.id) }}" class="nav-dropdown-link nav-course-link {% if request.endpoint == 'course' and request.view_args.get('course_id') == c.id %}active{% endif %}">{{ c.name }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <a href="{{ purl('calendar') }}" class="nav-dropdown-link {% if request.endpoint == 'calendar' %}active{% endif %}">📅 Calendar</a>
+        <a href="{{ purl('study_log') }}" class="nav-dropdown-link {% if request.endpoint == 'study_log' %}active{% endif %}">⏱ Study Log</a>
+        <div class="nav-dropdown-divider"></div>
+        <a href="{{ purl('logout') }}" class="nav-dropdown-link">Sign out</a>
+      </div>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ proxy_prefix }}/static/js/app.js"></script>
+
+  {% if session.username and nav_courses %}
+  <!-- ── Study Session Overlay ──────────────────────────────────────────────── -->
+  <!-- Minimized session widget -->
+  <div id="study-mini-widget" class="study-mini-widget hidden" onclick="maximizeStudy()">
+    <div class="study-mini-left">
+      <span id="mini-course-label" class="study-mini-course"></span>
+      <span id="mini-timer" class="study-mini-timer">00:00:00</span>
+    </div>
+    <span class="study-mini-hint">Tap to open</span>
+  </div>
+
+  <div id="study-overlay" class="study-overlay" onclick="handleStudyOverlayClick(event)">
+    <div class="study-modal" onclick="event.stopPropagation()">
+
+      <!-- Stage 1: Setup -->
+      <div id="study-stage-setup" class="study-stage">
+        <div class="modal-header">
+          <h3>Start a Study Session</h3>
+          <button class="modal-close" onclick="closeStudyOverlay()">✕</button>
+        </div>
+        <div class="modal-form">
+          <label>Course
+            <select id="study-course-select">
+              {% for c in nav_courses %}
+              <option value="{{ c.id }}">{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Session name <span class="optional">(optional — can fill in after)</span>
+            <input type="text" id="study-name-input" placeholder="e.g. Chapter 5 review" />
+          </label>
+          <div>
+            <div class="modal-field-label">Timer mode</div>
+            <div class="timer-mode-picker">
+              <button class="timer-mode-btn active" onclick="setStudyMode('up', this)">⏫ Count Up</button>
+              <button class="timer-mode-btn" onclick="setStudyMode('down', this)">⏱ Set a Target</button>
+            </div>
+          </div>
+          <div id="study-target-row" style="display:none">
+            <div class="form-row">
+              <div class="form-col">Hours<input type="number" id="study-target-h" placeholder="0" min="0" max="23" /></div>
+              <div class="form-col">Minutes<input type="number" id="study-target-m" placeholder="30" min="0" max="59" /></div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeStudyOverlay()">Cancel</button>
+            <button class="btn btn-primary" onclick="startStudySession()">Start</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stage 2: Active timer -->
+      <div id="study-stage-active" class="study-stage hidden">
+        <div class="study-active-header">
+          <span id="active-course-pill" class="study-course-pill"></span>
+          <button class="btn btn-ghost btn-sm" onclick="minimizeStudy()">⤓ Minimize</button>
+        </div>
+        <div id="active-name-label" style="font-size:.875rem;color:var(--text-muted);margin-top:.4rem"></div>
+        <div class="timer-display-wrap">
+          <div id="study-timer" class="timer-display">00:00:00</div>
+          <div id="study-target-progress" style="display:none">
+            <div id="study-target-label" class="timer-target-label"></div>
+            <div class="timer-progress-track">
+              <div id="study-progress-fill" class="timer-progress-fill"></div>
+            </div>
+          </div>
+          <div id="study-break-label" class="break-label hidden">
+            Break: <span id="study-break-display">00:00</span>
+          </div>
+        </div>
+        <div class="timer-actions">
+          <button id="study-break-btn" class="btn btn-ghost" onclick="toggleStudyBreak()">⏸ Take a Break</button>
+          <button class="btn btn-ghost btn-danger-ghost" onclick="endStudySession()">End Session</button>
+        </div>
+      </div>
+
+      <!-- Stage 3: Summary + save -->
+      <div id="study-stage-summary" class="study-stage hidden">
+        <div class="modal-header">
+          <h3>Session complete!</h3>
+        </div>
+        <div class="study-summary-stats">
+          <div class="study-stat-box">
+            <div class="study-stat-label">Study time</div>
+            <div id="summary-study-val" class="study-stat-value"></div>
+          </div>
+          <div class="study-stat-box">
+            <div class="study-stat-label">Break time</div>
+            <div id="summary-break-val" class="study-stat-value muted"></div>
+          </div>
+        </div>
+        <div class="modal-form">
+          <label>Session name <span class="optional">(optional)</span>
+            <input type="text" id="summary-name-input" placeholder="e.g. Chapter 5 review" />
+          </label>
+          <label>Notes <span class="optional">(optional)</span>
+            <textarea id="summary-notes-input" rows="3" placeholder="What did you cover? Any key takeaways?"></textarea>
+          </label>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="discardStudySession()">Discard</button>
+            <button class="btn btn-primary" onclick="saveStudySession()">Save Session</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const STUDY_PROXY = "{{ proxy_prefix }}";
+    let studyElapsed = 0, studyBreakElapsed = 0;
+    let studyInterval = null;
+    let studyOnBreak = false;
+    let studyMode = 'up';
+    let studyTarget = 0;
+    let studyCourseId = '';
+
+    function openStudySession(preselect) {
+      const sel = document.getElementById('study-course-select');
+      if (preselect && sel) sel.value = preselect;
+      showStudyStage('setup');
+      document.getElementById('study-overlay').classList.add('open');
+    }
+
+    function closeStudyOverlay() {
+      document.getElementById('study-overlay').classList.remove('open');
+      document.getElementById('study-mini-widget').classList.add('hidden');
+    }
+
+    function minimizeStudy() {
+      document.getElementById('study-overlay').classList.remove('open');
+      document.getElementById('mini-course-label').textContent =
+        document.getElementById('active-course-pill').textContent;
+      document.getElementById('study-mini-widget').classList.remove('hidden');
+    }
+
+    function maximizeStudy() {
+      document.getElementById('study-mini-widget').classList.add('hidden');
+      document.getElementById('study-overlay').classList.add('open');
+    }
+
+    function handleStudyOverlayClick(e) {
+      if (e.target !== document.getElementById('study-overlay')) return;
+      if (!document.getElementById('study-stage-active').classList.contains('hidden')) return;
+      closeStudyOverlay();
+    }
+
+    function showStudyStage(name) {
+      ['setup', 'active', 'summary'].forEach(s =>
+        document.getElementById('study-stage-' + s).classList.add('hidden'));
+      document.getElementById('study-stage-' + name).classList.remove('hidden');
+    }
+
+    function setStudyMode(mode, btn) {
+      studyMode = mode;
+      document.querySelectorAll('.timer-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('study-target-row').style.display = mode === 'down' ? '' : 'none';
+    }
+
+    function startStudySession() {
+      const sel = document.getElementById('study-course-select');
+      studyCourseId = sel.value;
+      const courseName = sel.options[sel.selectedIndex].text;
+      const nameVal = document.getElementById('study-name-input').value.trim();
+
+      if (studyMode === 'down') {
+        const h = parseInt(document.getElementById('study-target-h').value) || 0;
+        const m = parseInt(document.getElementById('study-target-m').value) || 0;
+        studyTarget = h * 3600 + m * 60;
+        if (studyTarget === 0) { alert('Enter a target time.'); return; }
+      } else {
+        studyTarget = 0;
+      }
+
+      studyElapsed = 0;
+      studyBreakElapsed = 0;
+      studyOnBreak = false;
+
+      document.getElementById('active-course-pill').textContent = courseName;
+      document.getElementById('active-name-label').textContent = nameVal;
+      document.getElementById('summary-name-input').value = nameVal;
+      document.getElementById('study-timer').textContent = '00:00:00';
+      document.getElementById('study-timer').classList.remove('overtime');
+      document.getElementById('study-break-label').classList.add('hidden');
+      document.getElementById('study-break-btn').textContent = '⏸ Take a Break';
+
+      if (studyTarget > 0) {
+        document.getElementById('study-target-progress').style.display = '';
+        document.getElementById('study-target-label').textContent = 'Target: ' + studyFmt(studyTarget);
+        document.getElementById('study-progress-fill').style.width = '0%';
+      } else {
+        document.getElementById('study-target-progress').style.display = 'none';
+      }
+
+      showStudyStage('active');
+      studyInterval = setInterval(studyTick, 1000);
+    }
+
+    function studyTick() {
+      if (studyOnBreak) {
+        studyBreakElapsed++;
+        document.getElementById('study-break-display').textContent = studyPad(Math.floor(studyBreakElapsed/60)) + ':' + studyPad(studyBreakElapsed%60);
+      } else {
+        studyElapsed++;
+        const t = studyFmt(studyElapsed);
+        document.getElementById('study-timer').textContent = t;
+        document.getElementById('mini-timer').textContent = t;
+        if (studyTarget > 0) {
+          const pct = Math.min(studyElapsed / studyTarget * 100, 100);
+          document.getElementById('study-progress-fill').style.width = pct + '%';
+          if (studyElapsed > studyTarget) document.getElementById('study-timer').classList.add('overtime');
+        }
+      }
+    }
+
+    function toggleStudyBreak() {
+      studyOnBreak = !studyOnBreak;
+      const btn = document.getElementById('study-break-btn');
+      const lbl = document.getElementById('study-break-label');
+      btn.textContent = studyOnBreak ? '▶ Resume' : '⏸ Take a Break';
+      studyOnBreak ? lbl.classList.remove('hidden') : null;
+    }
+
+    function endStudySession() {
+      clearInterval(studyInterval); studyInterval = null;
+      studyOnBreak = false;
+      document.getElementById('summary-study-val').textContent = studyFmt(studyElapsed);
+      document.getElementById('summary-break-val').textContent = studyFmt(studyBreakElapsed);
+      document.getElementById('summary-notes-input').value = '';
+      showStudyStage('summary');
+    }
+
+    async function saveStudySession() {
+      const today = new Date();
+      const date = today.getFullYear() + '-' + studyPad(today.getMonth()+1) + '-' + studyPad(today.getDate());
+      const res = await fetch(STUDY_PROXY + '/course/' + studyCourseId + '/study/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:       document.getElementById('summary-name-input').value.trim(),
+          notes:      document.getElementById('summary-notes-input').value.trim(),
+          date,
+          duration:   studyElapsed,
+          break_time: studyBreakElapsed,
+          target:     studyTarget || null
+        })
+      });
+      if (res.ok) { closeStudyOverlay(); location.reload(); }
+    }
+
+    function discardStudySession() {
+      closeStudyOverlay();
+      document.getElementById('study-name-input').value = '';
+      document.getElementById('summary-notes-input').value = '';
+      showStudyStage('setup');
+    }
+
+    function studyFmt(secs) {
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      return studyPad(h) + ':' + studyPad(m) + ':' + studyPad(s);
+    }
+
+    function studyPad(n) { return String(n).padStart(2, '0'); }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        const overlay = document.getElementById('study-overlay');
+        if (overlay && overlay.classList.contains('open') &&
+            document.getElementById('study-stage-active').classList.contains('hidden')) {
+          closeStudyOverlay();
+        }
+      }
+    });
+  </script>
+  {% endif %}
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
