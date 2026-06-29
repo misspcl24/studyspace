@@ -5,7 +5,7 @@
 <div class="course-header">
   <div class="course-header-top">
     <a href="{{ purl('dashboard') }}" class="back-link">← My Courses</a>
-    <button class="btn btn-ghost btn-sm btn-danger-ghost" onclick="openModal('delete-course-modal')">Delete course</button>
+    <button class="btn btn-ghost btn-sm btn-danger-ghost" onclick="openModal('edit-course-modal')">Edit course</button>
   </div>
   <div class="course-header-row">
     <div class="course-icon course-icon-lg course-icon-editable" onclick="openModal('icon-picker-modal')" title="Change icon" id="course-icon-display">{{ course.icon or course.name[0].upper() }}</div>
@@ -44,7 +44,7 @@
 
   {% if course.assignments %}
   <div class="assignment-list">
-    {% for a in course.assignments %}
+    {% for a in (course.assignments | rejectattr('progress', 'equalto', 100) | list) + (course.assignments | selectattr('progress', 'equalto', 100) | list) %}
     <div class="assignment-card" onclick="openAssignmentDetail('{{ a.id }}')">
       <div class="assignment-top">
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:.4rem">
@@ -462,18 +462,31 @@
   </div>
 </div>
 
-<div id="delete-course-modal" class="modal-overlay" onclick="closeModal('delete-course-modal')">
+<div id="edit-course-modal" class="modal-overlay" onclick="closeModal('edit-course-modal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-header">
-      <h3>Delete course?</h3>
-      <button class="modal-close" onclick="closeModal('delete-course-modal')">✕</button>
+      <h3>Edit course</h3>
+      <button class="modal-close" onclick="closeModal('edit-course-modal')">✕</button>
     </div>
     <div class="modal-form">
-      <p class="delete-warning">This will permanently delete <strong>{{ course.name }}</strong> and all its assignments and data. This can't be undone.</p>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeModal('delete-course-modal')">Cancel</button>
+      <form method="POST" action="{{ purl('edit_course', course_id=course.id) }}">
+        <div class="form-group">
+          <label>Course name</label>
+          <input type="text" name="name" value="{{ course.name }}" required>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" name="description" value="{{ course.description or '' }}">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('edit-course-modal')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save changes</button>
+        </div>
+      </form>
+      <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border)">
+        <p class="delete-warning">Permanently delete <strong>{{ course.name }}</strong> and all its data.</p>
         <form method="POST" action="{{ purl('delete_course', course_id=course.id) }}" style="margin:0">
-          <button type="submit" class="btn btn-danger">Delete course</button>
+          <button type="submit" class="btn btn-danger btn-sm">Delete course</button>
         </form>
       </div>
     </div>

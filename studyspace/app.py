@@ -238,6 +238,18 @@ def update_course(course_id):
             return jsonify({"ok": True})
     return jsonify({"ok": False}), 404
 
+@app.route("/course/<course_id>/edit", methods=["POST"])
+def edit_course(course_id):
+    if not logged_in():
+        return predir("login")
+    user = load_user(session["username"])
+    for c in user["courses"]:
+        if c["id"] == course_id:
+            c["name"] = request.form["name"].strip()
+            c["description"] = request.form["description"].strip()
+            save_user(user)
+            return predir("course", course_id=course_id)
+    return predir("dashboard")
 
 @app.route("/course/<course_id>/assignment/add", methods=["POST"])
 def add_assignment(course_id):
