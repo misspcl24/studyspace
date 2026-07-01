@@ -21,11 +21,16 @@ def purl(endpoint, **kwargs):
 @app.context_processor
 def inject_helpers():
     nav_courses = []
+    nav_photo = ""
+    nav_display_name = ""
     if "username" in session:
         u = load_user(session["username"])
         if u:
             nav_courses = u.get("courses", [])
-    return dict(purl=purl, proxy_prefix=PROXY_PREFIX, nav_courses=nav_courses)
+            nav_photo = u.get("profile_photo", "")
+            nav_display_name = u.get("display_name", "") or session["username"]
+    return dict(purl=purl, proxy_prefix=PROXY_PREFIX, nav_courses=nav_courses,
+                nav_photo=nav_photo, nav_display_name=nav_display_name)
 
 
 @app.template_filter('fmt_duration')
@@ -566,6 +571,52 @@ def delete_calendar_event(event_id):
         return jsonify({"ok": True})
     return jsonify({"ok": False}), 404
 
+@app.route("/profile/photo", methods=["POST"])
+def update_photo():
+    if not logged_in():
+        return jsonify({"ok": False}), 401
+    user = load_user(session["username"])
+    photo = request.files.get("photo")
+    if not photo or photo.filename == "":
+        return jsonify({"ok": False, "error": "No file"}), 400
+    upload_dir = os.path.join(os.path.dirname(__file__), "static", "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    ext = photo.filename.rsplit(".", 1)[-1].lower()
+    if ext not in {"jpg", "jpeg", "png", "gif", "webp"}:
+        return jsonify({"ok": False, "error": "Bad file type"}), 400
+    filename = f"{session['username']}_photo.{ext}"
+    photo.save(os.path.join(upload_dir, filename))
+    user["profile_photo"] = filename
+    save_user(user)
+    return jsonify({"ok": True, "filename": filename})
+
+@app.route("/profile/update", methods=["POST"])
+def update_profile():
+    if not logged_in():
+        return jsonify({"ok": False}), 401
+    user = load_user(session["username"])
+    data = request.get_json()
+    if "display_name" in data:
+        user["display_name"] = data["display_name"].strip()
+    if "email" in data:
+        user["email"] = data["email"].strip()
+    save_user(user)
+    return jsonify({"ok": True})
+
+@app.route("/profile/password", methods=["POST"])
+def change_password():
+    if not logged_in():
+        return jsonify({"ok": False}), 401
+    user = load_user(session["username"])
+    data = request.get_json()
+    if user["password_hash"] != hash_password(data.get("current", "")):
+        return jsonify({"ok": False, "error": "Wrong current password"}), 403
+    new_password = data.get("new", "").strip()
+    if len(new_password) < 6:
+        return jsonify({"ok": False, "error": "Too short"}), 400
+    user["password_hash"] = hash_password(new_password)
+    save_user(user)
+    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

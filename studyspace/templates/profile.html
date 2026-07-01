@@ -2,14 +2,100 @@
 {% block title %}Account — StudySpace{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <h2 class="page-title">Account</h2>
-    <p class="page-sub">{{ session.username }}</p>
-  </div>
-</div>
+<div class="account-page">
 
-<div style="color: var(--text-muted); text-align: center; padding: 4rem 0;">
-  Profile &amp; account settings coming soon.
+  <!-- Avatar -->
+  <div class="account-avatar-section">
+    <div class="account-avatar" onclick="document.getElementById('photo-input').click()">
+      {% if user.profile_photo %}
+        <img src="{{ proxy_prefix }}/static/uploads/{{ user.profile_photo }}" alt="Profile photo" />
+      {% else %}
+        <span class="avatar-initials">{{ (user.display_name or user.username)[0].upper() }}</span>
+      {% endif %}
+      <div class="avatar-overlay">Change photo</div>
+    </div>
+    <input type="file" id="photo-input" accept="image/*" style="display:none" onchange="uploadPhoto(this)" />
+    <div class="account-username">{{ user.display_name or user.username }}</div>
+  </div>
+
+  <!-- Account Info -->
+  <div class="account-card">
+    <h3 class="account-card-title">Account Info</h3>
+    <label>Display name
+      <input type="text" id="display-name-input" value="{{ user.display_name or user.username }}" />
+    </label>
+    <label>Email
+      <input type="email" id="email-input" value="{{ user.email or '' }}" placeholder="add your email" />
+    </label>
+    <div class="account-card-actions">
+      <button class="btn btn-primary" onclick="saveProfile()">Save changes</button>
+      <span id="profile-msg" class="save-msg"></span>
+    </div>
+  </div>
+
+  <!-- Change Password -->
+  <div class="account-card">
+    <h3 class="account-card-title">Change Password</h3>
+    <label>Current password
+      <input type="password" id="current-pw" placeholder="enter current password" />
+    </label>
+    <label>New password
+      <input type="password" id="new-pw" placeholder="at least 6 characters" />
+    </label>
+    <div class="account-card-actions">
+      <button class="btn btn-primary" onclick="changePassword()">Update password</button>
+      <span id="pw-msg" class="save-msg"></span>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
+{% block scripts %}
+<script>
+const PROXY = "{{ proxy_prefix }}";
+
+async function uploadPhoto(input) {
+  const form = new FormData();
+  form.append("photo", input.files[0]);
+  const res = await fetch(PROXY + "/profile/photo", { method: "POST", body: form });
+  if (res.ok) location.reload();
+}
+
+async function saveProfile() {
+  const res = await fetch(PROXY + "/profile/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      display_name: document.getElementById("display-name-input").value,
+      email: document.getElementById("email-input").value
+    })
+  });
+  const msg = document.getElementById("profile-msg");
+  msg.textContent = res.ok ? "Saved!" : "Something went wrong.";
+  setTimeout(() => msg.textContent = "", 3000);
+}
+
+async function changePassword() {
+  const res = await fetch(PROXY + "/profile/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      current: document.getElementById("current-pw").value,
+      new: document.getElementById("new-pw").value
+    })
+  });
+  const msg = document.getElementById("pw-msg");
+  if (res.ok) {
+    msg.textContent = "Password updated!";
+    document.getElementById("current-pw").value = "";
+    document.getElementById("new-pw").value = "";
+  } else {
+    const data = await res.json();
+    msg.textContent = data.error || "Something went wrong.";
+  }
+  setTimeout(() => msg.textContent = "", 3000);
+}
+</script>
+{% endblock %}
+
+

@@ -18,7 +18,14 @@
         <span class="hamburger-bar"></span>
       </button>
       <div id="nav-dropdown" class="nav-dropdown">
-        <a href="{{ purl('profile') }}" class="nav-dropdown-user">{{ session.username }}</a>
+       <a href="{{ purl('profile') }}" class="nav-dropdown-user">
+  {% if nav_photo %}
+    <img class="nav-avatar" src="{{ proxy_prefix }}/static/uploads/{{ nav_photo }}" alt="avatar" />
+  {% else %}
+    <span class="nav-avatar nav-avatar-initials">{{ nav_display_name[0].upper() }}</span>
+  {% endif %}
+  {{ nav_display_name }}
+</a>
         <div class="nav-dropdown-divider"></div>
         <div class="nav-group">
           <a href="{{ purl('dashboard') }}" class="nav-dropdown-link {% if request.endpoint == 'dashboard' %}active{% endif %}">📚 Dashboard</a>
